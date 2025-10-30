@@ -28,6 +28,18 @@ class ClinicalChatbot:
         "review_of_systems"
     ]
     
+    # Specific questions for each section based on question.txt
+    SECTION_QUESTIONS = {
+        "chief_complaint": "What brings you to the doctor today? (Chief Complaint)",
+        "present_illness": "Can you tell me more about your current illness? When did it start? How has it been progressing? (History of Present Illness)",
+        "past_medical_history": "Do you have any past medical conditions or chronic illnesses? (Past Medical History)",
+        "medications": "Are you currently taking any medications or prescriptions?",
+        "allergies": "Do you have any allergies? If so, which are they?",
+        "family_history": "Does anyone in your family have a history of this or similar illnesses? (Family History)",
+        "social_history": "Can you tell me about your lifestyle - do you smoke, drink alcohol, or have any relevant social history related to your present illness?",
+        "review_of_systems": "review_complete"  # Special marker for completion
+    }
+    
     def __init__(self, api_key):
         self.llm = ChatGoogleGenerativeAI(
             model = "gemini-2.5-pro",
@@ -44,6 +56,7 @@ class ClinicalChatbot:
             "section_index": 0,
             "history": [],
             "completed": False,
+            "awaiting_file_response": False,  # Track if waiting for file upload response
             "section_data": {
                 "chief_complaint": None,
                 "present_illness": None,
@@ -209,9 +222,11 @@ Extract and return as JSON with these exact keys (use null if information not fo
         """Return welcome message"""
         return """Welcome! I'm DocAI, your clinical history assistant.
     
-    I'll help collect your complete medical history before your doctor consultation. This will help your doctor provide you with the best possible care.
+I'll help collect your complete medical history before your doctor consultation. This will help your doctor provide you with the best possible care.
 
-    **Let's begin: What brings you to the doctor today?**"""
+I'll ask you 7 key questions to build your Electronic Health Record.
+
+**Let's begin: What brings you to the doctor today? (Chief Complaint)**"""
     
     def get_response(self, session_id, user_message):
         """Get chatbot response"""
@@ -220,11 +235,39 @@ Extract and return as JSON with these exact keys (use null if information not fo
         
         session = self.sessions[session_id]
         
+        # Handle file upload response
+        if session.get("awaiting_file_response", False):
+            user_lower = user_message.lower().strip()
+            if any(word in user_lower for word in ["yes", "yeah", "sure", "ok", "okay", "yep"]):
+                session["awaiting_file_response"] = False
+                return {
+                    "message": "Great! Please upload your medical file (PDF or JSON format) using the file upload feature in the interface.",
+                    "progress": 100,
+                    "completed": True,
+                    "awaiting_file": True
+                }
+            elif any(word in user_lower for word in ["no", "nope", "nah", "not"]):
+                session["awaiting_file_response"] = False
+                session["completed"] = True
+                return {
+                    "message": "No problem! Your clinical history collection is complete. This information will be available for your doctor to review.",
+                    "progress": 100,
+                    "completed": True
+                }
+            else:
+                return {
+                    "message": "I didn't quite understand. Would you like to upload a medical file (PDF or JSON)? Please answer 'yes' or 'no'.",
+                    "progress": 100,
+                    "completed": False,
+                    "awaiting_file_response": True
+                }
+        
         # Add to history
         session["history"].append(f"Patient: {user_message}")
         
         # Get current section
-        current_section = self.SECTIONS[min(session["section_index"], len(self.SECTIONS)-1)]
+        section_index = min(session["section_index"], len(self.SECTIONS)-1)
+        current_section = self.SECTIONS[section_index]
         
         # Check if user says "no", "none", "not applicable" etc.
         negative_responses = ["no", "none", "nope", "not", "nothing", "n/a", "na", "negative"]
@@ -237,29 +280,80 @@ Extract and return as JSON with these exact keys (use null if information not fo
             session["section_data"][current_section] = user_message
         # else: keep the default "None reported" value
         
-        # Create conversation chain with persona
-        chain = self._create_chain(session)
+        # Generate empathetic acknowledgment
+        acknowledgment = self._generate_acknowledgment(current_section, user_message, is_negative)
         
-        # Generate response
-        response = chain.predict(input=user_message)
+        # Advance to next section
+        session["section_index"] += 1
         
-        # Check if should advance section
-        if len(user_message.split()) >= 3:  # Lowered from 5 to 3 to allow "no" responses
-            session["section_index"] += 1
+        # Check if all sections are complete
+        if session["section_index"] >= len(self.SECTIONS):
+            # All 7 sections complete - show thank you and ask about file
+            session["awaiting_file_response"] = True
+            thank_you_message = f"""{acknowledgment}
+
+**🎉 Thank you so much for providing all this information!**
+
+I've collected all 7 key details for your Electronic Health Record:
+✓ Chief Complaint
+✓ History of Present Illness
+✓ Past Medical History
+✓ Current Medications
+✓ Allergies
+✓ Family History
+✓ Social History
+
+This comprehensive information will help your doctor provide you with the best possible care during your consultation.
+
+**Would you like to upload any additional medical records (PDF or JSON format) to supplement this information?**"""
             
-            if session["section_index"] < len(self.SECTIONS):
-                response += f"\n\nThank you for sharing that information. Let's move to the next topic..."
-            else:
-                session["completed"] = True
-                response += "\n\nThank you! Your clinical history collection is complete. This information will be available for your doctor to review."
+            session["history"].append(f"Assistant: {thank_you_message}")
             
+            return {
+                "message": thank_you_message,
+                "progress": 100,
+                "completed": False,  # Not fully complete until file question is answered
+                "awaiting_file_response": True
+            }
+        
+        # Get next question
+        next_section = self.SECTIONS[session["section_index"]]
+        next_question = self.SECTION_QUESTIONS[next_section]
+        
+        response = f"{acknowledgment}\n\n**{next_question}**"
+        
         session["history"].append(f"Assistant: {response}")
-            
+        
         return {
             "message": response,
             "progress": int((session["section_index"] / len(self.SECTIONS)) * 100),
-            "completed": session["completed"]
+            "completed": False
+        }
+    
+    def _generate_acknowledgment(self, section, user_message, is_negative):
+        """Generate empathetic acknowledgment based on the section and response"""
+        if is_negative:
+            acknowledgments = {
+                "chief_complaint": "I understand.",
+                "present_illness": "Got it, thank you for clarifying.",
+                "past_medical_history": "Understood, no past medical conditions noted.",
+                "medications": "Noted - no current medications.",
+                "allergies": "Good to know - no known allergies recorded.",
+                "family_history": "Understood, no relevant family history.",
+                "social_history": "Thank you for sharing that."
             }
+        else:
+            acknowledgments = {
+                "chief_complaint": "Thank you for sharing that. I understand your concern.",
+                "present_illness": "I appreciate you providing those details. That's very helpful.",
+                "past_medical_history": "Thank you for that information. It's important for your doctor to know.",
+                "medications": "Got it, I've recorded your current medications.",
+                "allergies": "Important information - I've noted your allergies.",
+                "family_history": "Thank you for sharing your family history.",
+                "social_history": "I appreciate you sharing this information."
+            }
+        
+        return acknowledgments.get(section, "Thank you for that information.")
         
     def _create_chain(self, session):
         """Create LangChain conversation chain with system prompt"""
