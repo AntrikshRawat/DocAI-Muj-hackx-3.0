@@ -11,6 +11,7 @@ export interface IMessage {
 // Conversation interface
 export interface IConversation extends Document {
   userId: mongoose.Types.ObjectId;
+  sessionId: string;
   messages: IMessage[];
   createdAt: Date;
   updatedAt: Date;
@@ -45,6 +46,11 @@ const conversationSchema = new Schema<IConversation>(
       ref: 'User',
       required: true,
     },
+      sessionId: {
+        type: String,
+        required: true, // identifier for this chat session
+        index: true,
+      },
     messages: [messageSchema], // all messages in one chat session
   },
   { timestamps: true } // adds createdAt, updatedAt

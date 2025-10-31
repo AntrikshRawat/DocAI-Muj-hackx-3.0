@@ -1,47 +1,39 @@
 import { GoogleLogin } from '@react-oauth/google'
+import axios from 'axios'
 import './Home.css'
 import { useStore } from './store/useStore'
 
 function Home() {
-  const { setUser } = useStore()
+  const { setUser } = useStore();
+
+  const backendUrl = import.meta.env.VITE_BACKEND_URL;
 
   const handleSuccess = async (credentialResponse: any) => {
     console.log('Login Success:', credentialResponse)
     
     if (credentialResponse.credential) {
       try {
-        const response = await fetch('http://10.35.157.146:5001/api/auth/google', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            token: credentialResponse.credential
-          })
+        const base = backendUrl;
+        const response = await axios.post(`${base}/api/auth/google`, {
+          token: credentialResponse.credential,
         })
-
-        const {data} = await response.json()
+        const apiBody = response.data
+        const data = apiBody?.data ?? apiBody
         console.log('API Response:', data)
 
-        if (response.ok) {
-          // Handle successful authentication
-          console.log('Authentication successful:', data)
-          
-          // Store user data from API response in Zustand
-          setUser({
-            email: data.user?.email || data.email || '',
-            name: data.user?.name || data.name || '',
-            picture: data.user?.picture || data.picture || '',
-            token: data.token || credentialResponse.credential,
-            id: data.user?.id || data.id || ''
-          })
-          
-          // User will be automatically redirected to chat page by App.tsx
-        } else {
-          console.error('Authentication failed:', data)
-        }
-      } catch (error) {
-        console.error('Error sending token to API:', error)
+        // Store user data from API response in Zustand
+        setUser({
+          email: data.user?.email || data.email || '',
+          name: data.user?.name || data.name || '',
+          picture: data.user?.picture || data.picture || '',
+          token: data.token || credentialResponse.credential,
+          id: data.user?.id || data.id || ''
+        })
+
+        // User will be automatically redirected to chat page by App.tsx
+      } catch (error: any) {
+        // axios throws for non-2xx responses — capture useful info if available
+        console.error('Error sending token to API:', error.response?.data ?? error.message ?? error)
       }
     }
   }

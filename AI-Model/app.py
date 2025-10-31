@@ -77,31 +77,56 @@ async def create_session_with_file(file: UploadFile = File(...)):
     - Returns session ready to continue with missing information
     """
     
-    # Validate file type
-    allowed_extensions = ['.json', '.pdf']
-    file_ext = os.path.splitext(file.filename)[1].lower()
-    
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400, 
-            detail=f"Invalid file type. Only JSON and PDF files are allowed. Got: {file_ext}"
-        )
-    
     try:
+        # Validate file is provided
+        if not file or not file.filename:
+            print("Error: No file provided")
+            return ErrorResponse(error="No file provided. Please select a file to upload.")
+        
+        print(f"Received file: {file.filename}")
+        
+        # Validate file type
+        allowed_extensions = ['.json', '.pdf']
+        file_ext = os.path.splitext(file.filename)[1].lower()
+        
+        print(f"File extension: {file_ext}")
+        
+        if file_ext not in allowed_extensions:
+            print(f"Invalid file type: {file_ext}")
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid file type. Only JSON and PDF files are allowed. Got: {file_ext}"
+            )
+        
         # Read file content
+        print("Reading file content...")
         content = await file.read()
+        print(f"File size: {len(content)} bytes")
+        
+        if len(content) == 0:
+            print("Error: Empty file")
+            return ErrorResponse(error="The uploaded file is empty. Please upload a valid file with content.")
         
         # Determine file type and process
+        print(f"Processing {file_ext} file...")
         if file_ext == '.json':
             content_str = content.decode('utf-8')
+            print(f"JSON content length: {len(content_str)} characters")
             result = bot.create_session_with_file_data(content_str, "json")
         elif file_ext == '.pdf':
+            print(f"PDF content length: {len(content)} bytes")
             result = bot.create_session_with_file_data(content, "pdf")
+        else:
+            return ErrorResponse(error=f"Unsupported file type: {file_ext}")
+        
+        print(f"Processing result: {list(result.keys())}")
         
         # Check for errors
         if "error" in result:
+            print(f"Processing error: {result['error']}")
             return ErrorResponse(error=result["error"])
         
+        print("File processed successfully")
         return SessionWithDataResponse(
             session_id=result["session_id"],
             welcome_message=result["welcome_message"],
@@ -109,14 +134,35 @@ async def create_session_with_file(file: UploadFile = File(...)):
             extracted_data=result["extracted_data"]
         )
         
+    except HTTPException as http_ex:
+        # Re-raise HTTP exceptions
+        print(f"HTTP Exception: {http_ex.detail}")
+        raise http_ex
+    except UnicodeDecodeError as ude:
+        print(f"Unicode decode error: {str(ude)}")
+        return ErrorResponse(error="Invalid file encoding. Please ensure the file is in UTF-8 format.")
     except Exception as e:
+        # Log the full error for debugging
+        print(f"Unexpected error processing file: {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return ErrorResponse(error=f"Failed to process file: {str(e)}")
 
 @app.post('/chat/{session_id}', response_model = ChatResponse | ErrorResponse)
 def post_chat_message(session_id: str, request: ChatRequest):
     """Sends a patient's message to the chatbot and gets a response."""
+    
+    # Validate session exists
     if session_id not in bot.sessions:
         return ErrorResponse(error = "Invalid session ID")
+    
+    # Validate message is not empty
+    if not request.user_message or not request.user_message.strip():
+        return ErrorResponse(error = "Please provide an answer to the question. Your response cannot be empty.")
+    
+    # Additional security: check message length (prevent extremely long inputs)
+    if len(request.user_message) > 5000:
+        return ErrorResponse(error = "Your message is too long. Please keep your response under 5000 characters.")
     
     response_data = bot.get_response(session_id, request.user_message)
     

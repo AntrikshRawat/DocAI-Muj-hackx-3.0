@@ -3,22 +3,22 @@ import { asyncHandler } from '../../middleware/asyncHandler';
 import Conversation from '../../models/Conversation';
 
 // @desc    Delete conversation (keep related files)
-// @route   DELETE /api/chats/:id
+// @route   DELETE /api/chats/:sessionId
 // @access  Private
 export const deleteConversation = asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { id } = req.params;
+    const { sessionId } = req.params;
 
-    if (!id) {
+    if (!sessionId) {
       res.status(400).json({
         status: 'error',
-        message: 'Conversation ID is required'
+        message: 'Session ID is required'
       });
       return;
     }
 
-    // Find and delete the conversation
-    const deletedConversation = await Conversation.findByIdAndDelete(id);
+    // Find and delete the conversation by sessionId
+    const deletedConversation = await Conversation.findOneAndDelete({ sessionId });
 
     if (!deletedConversation) {
       res.status(404).json({
@@ -33,7 +33,7 @@ export const deleteConversation = asyncHandler(async (req: Request, res: Respons
       status: 'success',
       message: 'Conversation deleted successfully',
       data: {
-        deletedConversationId: id
+        sessionId
       }
     });
   } catch (err) {

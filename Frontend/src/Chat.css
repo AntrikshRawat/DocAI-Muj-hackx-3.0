@@ -305,7 +305,7 @@
 .input-container{
 	padding:10px;border-top:1px solid rgba(16,24,40,0.04);display:flex;gap:10px;align-items:center;
 	/* keep composer visible at bottom of viewport */
-	position: sticky;
+	position: relative;
 	bottom: 0;
 	background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.9));
 	z-index: 6;
@@ -320,5 +320,188 @@
 @media (max-width:900px){
 	.left-panel{display:none}
 	.chat-container{padding:0 8px}
+}
+
+/* File preview styles */
+.file-preview{
+	position: absolute;
+	top: -50px;
+	left: 10px;
+	background: #ffffff;
+	border: 1px solid rgba(16,24,40,0.1);
+	border-radius: 8px;
+	padding: 8px 12px;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	box-shadow: 0 4px 12px rgba(16,24,40,0.08);
+	z-index: 10;
+}
+.file-name{
+	font-size: 0.85rem;
+	color: #0b1220;
+	font-weight: 500;
+	max-width: 200px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.remove-file-btn{
+	width: 20px;
+	height: 20px;
+	border-radius: 4px;
+	border: 0;
+	background: rgba(255,82,82,0.1);
+	color: var(--danger);
+	font-size: 18px;
+	line-height: 1;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0;
+	transition: all 0.2s ease;
+}
+.remove-file-btn:hover{
+	background: var(--danger);
+	color: #fff;
+}
+
+/* Message file preview styles */
+.message-file-preview{
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 10px;
+	background: rgba(47,107,237,0.06);
+	border: 1px solid rgba(47,107,237,0.12);
+	border-radius: 6px;
+	margin-bottom: 6px;
+	font-size: 0.8rem;
+}
+.file-icon{
+	font-size: 16px;
+	line-height: 1;
+}
+.file-preview-name{
+	color: var(--primary);
+	font-weight: 500;
+	max-width: 150px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* Hidden file input */
+.file-input-hidden{
+	display: none;
+}
+
+/* Progress indicator */
+.progress-indicator{
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	margin-top: 8px;
+}
+.progress-indicator span{
+	font-size: 0.85rem;
+	color: var(--primary);
+	font-weight: 600;
+}
+.progress-bar{
+	width: 200px;
+	height: 6px;
+	background: rgba(47,107,237,0.1);
+	border-radius: 3px;
+	overflow: hidden;
+}
+.progress-fill{
+	height: 100%;
+	background: linear-gradient(90deg, var(--primary), var(--accent));
+	transition: width 0.3s ease;
+}
+
+/* Completion badge */
+.completion-badge{
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 10px;
+	background: rgba(0,184,148,0.1);
+	color: var(--accent);
+	border-radius: 6px;
+	font-size: 0.85rem;
+	font-weight: 600;
+	margin-top: 8px;
+}
+
+/* Message text formatting */
+.message-text{
+	line-height: 1.6;
+	white-space: normal;
+	word-wrap: break-word;
+}
+
+.message-text strong{
+	font-weight: 700;
+	color: inherit;
+}
+
+.message-text em{
+	font-style: italic;
+}
+
+.message-text .bullet-item{
+	margin: 4px 0;
+	padding-left: 4px;
+}
+
+.message-text .numbered-item{
+	margin: 4px 0;
+	padding-left: 4px;
+}
+
+.message-text a{
+	color: var(--primary);
+	text-decoration: underline;
+}
+
+.message-text a:hover{
+	opacity: 0.8;
+}
+
+/* Typing indicator */
+.typing-message{
+	opacity: 1;
+	animation: fadeIn 0.3s ease;
+}
+
+.typing-cursor{
+	display: inline-block;
+	color: var(--primary);
+	animation: blink 1s infinite;
+	margin-left: 2px;
+	font-weight: bold;
+}
+
+@keyframes blink {
+	0%, 49% {
+		opacity: 1;
+	}
+	50%, 100% {
+		opacity: 0;
+	}
+}
+
+@keyframes fadeIn {
+	from {
+		opacity: 0;
+		transform: translateY(10px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 

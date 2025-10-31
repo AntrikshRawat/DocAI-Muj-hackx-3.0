@@ -6,6 +6,10 @@ interface Message {
   text: string
   sender: 'user' | 'ai'
   timestamp: Date
+  file?: {
+    name: string
+    type: string
+  }
 }
 
 interface ChatHistory {
@@ -40,7 +44,7 @@ interface AppState {
   chatHistory: ChatHistory[]
   
   // Chat actions
-  addMessage: (text: string, sender: 'user' | 'ai') => void
+  addMessage: (text: string, sender: 'user' | 'ai', file?: { name: string; type: string }) => void
   setCurrentChat: (chatId: number) => void
   createNewChat: () => void
   clearMessages: () => void
@@ -96,12 +100,13 @@ export const useStore = create<AppState>()(
       ],
 
       // Chat actions
-      addMessage: (text, sender) => {
+      addMessage: (text, sender, file) => {
         const newMessage: Message = {
           id: Date.now(),
           text,
           sender,
-          timestamp: new Date()
+          timestamp: new Date(),
+          ...(file && { file })
         }
         set((state) => ({
           messages: [...state.messages, newMessage]

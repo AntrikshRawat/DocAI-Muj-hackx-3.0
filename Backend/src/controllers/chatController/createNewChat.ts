@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../../middleware/asyncHandler';
 import Conversation from '../../models/Conversation';
+import config from '../../config/config';
 
 // @desc    Create new chat window/conversation
 // @route   POST /api/chats/new
@@ -17,9 +18,40 @@ export const createNewChat = asyncHandler(async (req: Request, res: Response) =>
       return;
     }
 
-    // Create new conversation with empty messages array
-    const newConversation = await Conversation.create({
+    // Call AI Model API to create new session (GET /session/new)
+    let aiSessionId: string;
+    let welcomeMessage: string;
+
+    try {
+      const aiResponse = await fetch(`${config.aiModelBaseUrl}/session/new`, {
+        method: 'GET'
+      });
+
+      if (!aiResponse.ok) {
+        throw new Error(`AI API returned status ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json() as {
+        session_id: string;
+        welcome_message: string;
+      };
+
+      aiSessionId = aiData.session_id;
+      welcomeMessage = aiData.welcome_message;
+
+    } catch (aiError) {
+      console.error('Failed to create AI session:', aiError);
+      res.status(500).json({
+        status: 'error',
+        message: 'Failed to initialize AI session. Please try again.'
+      });
+      return;
+    }
+
+    // Create new conversation with AI session ID
+    await Conversation.create({
       userId,
+      sessionId: aiSessionId,
       messages: []
     });
 
@@ -27,8 +59,8 @@ export const createNewChat = asyncHandler(async (req: Request, res: Response) =>
       status: 'success',
       message: 'New chat window created successfully',
       data: {
-        conversationId: newConversation._id,
-        conversation: newConversation
+        sessionId: aiSessionId,
+        welcomeMessage
       }
     });
   } catch (err) {

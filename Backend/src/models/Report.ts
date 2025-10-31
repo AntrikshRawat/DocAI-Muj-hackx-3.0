@@ -7,6 +7,7 @@ export interface IReport extends Document {
   iv: string;
   authTag: string;
   uploadedBy: mongoose.Types.ObjectId;
+  sessionId: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,6 +38,11 @@ const reportSchema = new Schema<IReport>(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
       required: true,
+    },
+    sessionId: {
+      type: String,
+      required: true, // identifier for the chat/session this report belongs to
+      index: true,
     },
   },
   { timestamps: true } // adds createdAt and updatedAt automatically

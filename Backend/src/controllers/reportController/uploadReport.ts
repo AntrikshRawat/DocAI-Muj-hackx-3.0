@@ -26,6 +26,18 @@ export const uploadReport = asyncHandler(async (req: Request, res: Response) => 
       return;
     }
 
+    const { uploadedBy, sessionId } = req.body;
+
+    if (!uploadedBy) {
+      res.status(400).json({ message: 'uploadedBy is required' });
+      return;
+    }
+
+    if (!sessionId) {
+      res.status(400).json({ message: 'sessionId is required' });
+      return;
+    }
+
     const { encrypted, iv, authTag } = encryptBuffer(req.file.buffer);
 
     const doc = await Report.create({
@@ -34,10 +46,19 @@ export const uploadReport = asyncHandler(async (req: Request, res: Response) => 
       encryptedData: encrypted,
       iv: iv.toString('base64'),
       authTag: authTag.toString('base64'),
-      uploadedBy: req.body.uploadedBy, // Assumes uploadedBy is passed in request
+      uploadedBy,
+      sessionId
     });
 
-    res.json({ id: doc._id, message: 'File stored securely' });
+    res.json({ 
+      status: 'success',
+      message: 'File stored securely',
+      data: {
+        id: doc._id,
+        filename: doc.filename,
+        sessionId: doc.sessionId
+      }
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Upload failed' });

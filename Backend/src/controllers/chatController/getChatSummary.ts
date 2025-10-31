@@ -1,58 +1,70 @@
 import { Request, Response } from 'express';
 import { asyncHandler } from '../../middleware/asyncHandler';
 import Conversation from '../../models/Conversation';
+import config from '../../config/config';
 
 // @desc    Get chat summary from AI model
 // @route   POST /api/chats/summary
 // @access  Private
 export const getChatSummary = asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { conversationId } = req.body;
+    const { sessionId } = req.body;
 
-    if (!conversationId) {
+    if (!sessionId) {
       res.status(400).json({
         status: 'error',
-        message: 'Conversation ID is required'
+        message: 'Session ID is required'
       });
       return;
     }
 
-    // Fetch conversation from database
-    const conversation = await Conversation.findById(conversationId);
+    // Find conversation by sessionId to get message count
+    const conversation = await Conversation.findOne({ sessionId });
 
-    if (!conversation) {
-      res.status(404).json({
+    // Call AI Model API to get summary (GET /summary/{session_id})
+    let summaryText: string;
+
+    try {
+      const aiResponse = await fetch(`${config.aiModelBaseUrl}/summary/${sessionId}`, {
+        method: 'GET'
+      });
+
+      if (!aiResponse.ok) {
+        throw new Error(`AI API returned status ${aiResponse.status}`);
+      }
+
+      const aiData = await aiResponse.json() as {
+        summary?: string;
+        error?: string;
+      };
+
+      if (aiData.error) {
+        console.error('AI Model Summary Error:', aiData.error);
+        res.status(400).json({
+          status: 'error',
+          message: aiData.error
+        });
+        return;
+      }
+
+      summaryText = aiData.summary || 'No summary available';
+
+    } catch (aiError) {
+      console.error('Chat summary error:', aiError);
+      res.status(500).json({
         status: 'error',
-        message: 'Conversation not found'
+        message: 'Failed to generate chat summary from AI service'
       });
       return;
     }
-
-    // Extract all messages text for summary
-    const messageTexts = conversation.messages
-      .filter(msg => msg.text)
-      .map(msg => `${msg.sender}: ${msg.text}`)
-      .join('\n');
-
-    if (!messageTexts) {
-      res.status(400).json({
-        status: 'error',
-        message: 'No messages to summarize'
-      });
-      return;
-    }
-
-    // TODO: Send request to AI model for summary
-    // Example: const aiResponse = await fetch('YOUR_AI_MODEL_ENDPOINT', { ... });
-    // For now, returning a placeholder response
-    const summaryText = `Summary of conversation with ${conversation.messages.length} messages. (AI integration pending)`;
 
     res.status(200).json({
       status: 'success',
       message: 'Chat summary generated successfully',
       data: {
+        sessionId,
         summary: summaryText,
-        messageCount: conversation.messages.length
+        messageCount: conversation?.messages.length || 0
       }
     });
   } catch (err) {

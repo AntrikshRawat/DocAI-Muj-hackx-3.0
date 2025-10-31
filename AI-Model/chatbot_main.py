@@ -75,23 +75,35 @@ class ClinicalChatbot:
         session_id = self.create_session()
         
         try:
+            print(f"[create_session_with_file_data] Processing {file_type} file")
+            
             if file_type == "json":
                 # file_content should be string for JSON
                 if isinstance(file_content, bytes):
                     file_content = file_content.decode('utf-8')
+                print(f"[create_session_with_file_data] Extracting JSON data")
                 extracted_data = self._extract_from_json(file_content)
             elif file_type == "pdf":
                 # file_content should be bytes for PDF
+                print(f"[create_session_with_file_data] Extracting PDF data")
                 extracted_data = self._extract_from_pdf(file_content)
             else:
+                print(f"[create_session_with_file_data] Unsupported file type: {file_type}")
                 return {"error": "Unsupported file type"}
+            
+            print(f"[create_session_with_file_data] Extracted data type: {type(extracted_data)}")
             
             # Ensure extracted_data is a dictionary
             if not isinstance(extracted_data, dict):
-                return {"error": f"Extracted data is not a dictionary: {type(extracted_data)}"}
+                error_msg = f"Extracted data is not a dictionary: {type(extracted_data)}"
+                print(f"[create_session_with_file_data] Error: {error_msg}")
+                return {"error": error_msg}
+            
+            print(f"[create_session_with_file_data] Extracted keys: {list(extracted_data.keys())}")
             
             # Check if extraction returned empty
             if not extracted_data:
+                print(f"[create_session_with_file_data] No data extracted")
                 return {"error": "No medical data could be extracted from the file"}
             
             # Pre-fill session data with extracted information
@@ -103,6 +115,8 @@ class ClinicalChatbot:
                     if key != "chief_complaint" and key != "present_illness":
                         session["section_index"] += 1
             
+            print(f"[create_session_with_file_data] Pre-filled {len(extracted_data)} sections")
+            
             # Generate welcome message with pre-filled info
             filled_sections = [k.replace('_', ' ').title() for k, v in extracted_data.items() if v]
             welcome_msg = f"""Welcome! I've reviewed your uploaded medical records.
@@ -113,6 +127,8 @@ Let me ask you a few more questions to complete your clinical history.
 
 **What brings you to the doctor today?**"""
             
+            print(f"[create_session_with_file_data] Success - Session ID: {session_id}")
+            
             return {
                 "session_id": session_id,
                 "welcome_message": welcome_msg,
@@ -121,6 +137,9 @@ Let me ask you a few more questions to complete your clinical history.
             }
             
         except Exception as e:
+            print(f"[create_session_with_file_data] Exception: {type(e).__name__}: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return {"error": f"Failed to process file: {str(e)}"}
     
     def _extract_from_json(self, json_content: str) -> dict:
@@ -233,6 +252,23 @@ I'll ask you 7 key questions to build your Electronic Health Record.
         if session_id not in self.sessions:
             return {"error": "Invalid session"}
         
+        # Input validation - check if message is empty or only whitespace
+        if not user_message or not user_message.strip():
+            return {
+                "error": "Please provide an answer to the question. Your response cannot be empty.",
+                "message": "I didn't receive any input. Please answer the question above.",
+                "requires_input": True
+            }
+        
+        # Additional validation - check minimum length (at least 1 character after stripping)
+        user_message = user_message.strip()
+        if len(user_message) < 1:
+            return {
+                "error": "Please provide a valid answer.",
+                "message": "Your response appears to be empty. Please provide an answer to continue.",
+                "requires_input": True
+            }
+        
         session = self.sessions[session_id]
         
         # Handle file upload response
@@ -288,8 +324,9 @@ I'll ask you 7 key questions to build your Electronic Health Record.
         
         # Check if all sections are complete
         if session["section_index"] >= len(self.SECTIONS):
-            # All 7 sections complete - show thank you and ask about file
-            session["awaiting_file_response"] = True
+            # All 7 sections complete - mark as completed and ask about file
+            session["completed"] = True  # Mark conversation as complete
+            session["awaiting_file_response"] = True  # Optional file upload step
             thank_you_message = f"""{acknowledgment}
 
 **🎉 Thank you so much for providing all this information!**
@@ -312,8 +349,8 @@ This comprehensive information will help your doctor provide you with the best p
             return {
                 "message": thank_you_message,
                 "progress": 100,
-                "completed": False,  # Not fully complete until file question is answered
-                "awaiting_file_response": True
+                "completed": True,  # Conversation is complete for summary generation
+                "awaiting_file_response": True  # But still waiting for optional file upload response
             }
         
         # Get next question
@@ -433,15 +470,89 @@ This comprehensive information will help your doctor provide you with the best p
         return SimpleConversationChain(self.llm, prompt, message_history)
     
     def generate_summary(self, session_id):
-        """Generate doctor summary with defaults for missing sections"""
+        """Generate polished, professional doctor summary using LLM"""
         if session_id not in self.sessions:
             return "No sessions found"
         
         session = self.sessions[session_id]
         section_data = session["section_data"]
         
-        # Build summary with actual data or defaults
-        summary = f"""**ELECTRONIC HEALTH RECORD - CLINICAL SUMMARY**
+        # Create prompt for LLM to refine the summary
+        refinement_prompt = f"""You are a medical scribe creating a professional Electronic Health Record (EHR) summary for a physician. 
+
+Based on the patient's responses below, create a polished, concise, and clinically appropriate summary. Follow these guidelines:
+
+1. Use professional medical terminology where appropriate
+2. Remove conversational language and filler words
+3. Write in complete, clear sentences using third person ("Patient reports...", "Patient denies...")
+4. Keep information factual and objective
+5. Organize information logically within each section
+6. Use abbreviations common in medical records (e.g., "y/o" for years old, "Hx" for history)
+7. If patient said "no/none", write standard medical phrases like "Denies...", "None reported", "No known..."
+
+**Raw Patient Responses:**
+
+Chief Complaint: {section_data.get("chief_complaint", "Not specified")}
+
+History of Present Illness: {section_data.get("present_illness", "Not specified")}
+
+Past Medical History: {section_data.get("past_medical_history", "None reported")}
+
+Current Medications: {section_data.get("medications", "None reported")}
+
+Allergies: {section_data.get("allergies", "No known allergies")}
+
+Family History: {section_data.get("family_history", "None reported")}
+
+Social History: {section_data.get("social_history", "None reported")}
+
+Review of Systems: {section_data.get("review_of_systems", "No concerns reported")}
+
+---
+
+Generate a professional clinical summary following this EXACT format:
+
+**ELECTRONIC HEALTH RECORD - CLINICAL SUMMARY**
+Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
+
+**CHIEF COMPLAINT:**
+[Refined, concise statement of primary concern]
+
+**HISTORY OF PRESENT ILLNESS:**
+[Professional narrative of current condition with timeline, symptoms, and progression]
+
+**PAST MEDICAL HISTORY:**
+[Organized list or statement of chronic conditions, past diagnoses]
+
+**CURRENT MEDICATIONS:**
+[Professional format of medications - if available include dosage/frequency]
+
+**ALLERGIES:**
+[Standard allergy documentation format]
+
+**FAMILY HISTORY:**
+[Relevant family medical conditions]
+
+**SOCIAL HISTORY:**
+[Professionally stated social factors]
+
+**REVIEW OF SYSTEMS:**
+[Clinical documentation of other symptoms or "All other systems reviewed and negative"]
+
+---
+**Prepared for physician review**
+
+IMPORTANT: Return ONLY the formatted clinical summary. Do not add any explanations, comments, or extra text."""
+
+        try:
+            # Use LLM to refine the summary
+            response = self.llm.invoke(refinement_prompt)
+            refined_summary = response.content.strip()
+            return refined_summary
+            
+        except Exception as e:
+            # Fallback to basic summary if LLM fails
+            return f"""**ELECTRONIC HEALTH RECORD - CLINICAL SUMMARY**
 Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 
 **CHIEF COMPLAINT:**
@@ -453,7 +564,7 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 **PAST MEDICAL HISTORY:**
 {section_data.get("past_medical_history", "None reported")}
 
-**MEDICATIONS:**
+**CURRENT MEDICATIONS:**
 {section_data.get("medications", "None reported")}
 
 **ALLERGIES:**
@@ -469,7 +580,5 @@ Generated: {datetime.now().strftime("%Y-%m-%d %H:%M")}
 {section_data.get("review_of_systems", "No concerns reported")}
 
 ---
-**Note:** Sections marked as "None reported" or "No known allergies" indicate the patient stated they had no relevant information for that category.
+**Note:** Error generating refined summary: {str(e)}
 """
-        
-        return summary
